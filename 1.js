@@ -37,6 +37,13 @@ let examCurrent = 0;
 let startFlag = false;
 let videoTimer = null;
 let pageTimeoutTimer = null; // 页面停留超时计时器
+let playbackMonitorTimer = null;
+let lastPlaybackPosition = 0;
+let positionStagnantTime = 0;
+let lastPositionCheckTime = 0;
+
+// 新增：监控状态标记
+let videoMonitoringStarted = false;
 
 // 获取当前课程
 function getCurrent() {
@@ -51,6 +58,9 @@ function getCurrent() {
 async function playNext() {
     clearInterval(checkCaptchaTimer);
     clearInterval(videoTimer);
+    stopPlaybackMonitor(); // 停止当前视频的监控
+    videoElement = null; // 重置视频元素
+    videoMonitoringStarted = false; // 重置监控状态
     if (current === links.length - 1) {
         addText("最后一个已看完！")
     } else {
@@ -204,10 +214,11 @@ async function playVideo() {
             await playNext();
         }else {
             videoElement = document.querySelector("video");
-            setVideoElement();
+            setVideoElement(); // 这里会启动监控
         }
         return
     }
+
     // 验证码弹窗
     layuiLayerContent = $('.layui-layer-content');
     if (layuiLayerContent.length > 0) {
@@ -217,7 +228,6 @@ async function playVideo() {
     }
 
     // 检测视频是否加载成功且暂停
-    // if (!videoElement) return;
     if (videoElement.paused) {
         videoElement.play();
         if (videoElement.readyState === 4) {
@@ -232,14 +242,23 @@ async function playVideo() {
 
 // 获取视频元素
 const setVideoElement = () => {
+    // 检查是否已经为当前视频启动了监控
+    if (videoMonitoringStarted) {
+        return; // 已经启动过监控，直接返回
+    }
+    
     videoElement.muted = true;
     videoElement.playbackRate = 1.0;
     videoElement.volume = 0;
     videoElement.onended = async function () {
         await playNext();
     };
-}
 
+    // 启动监控
+    startPlaybackMonitor();
+    videoMonitoringStarted = true; // 标记监控已启动
+    addText("检测到视频元素，已启动播放进度监控");
+}
 
 // 添加交互显示
 const addContainer = () => {
@@ -791,13 +810,87 @@ const getAnswer = (question) => {
     })
 }
 
+// 新增：播放进度监控函数
+function monitorPlaybackProgress() {
+    if (!videoElement) {
+        // 没有视频元素，重置监控
+        positionStagnantTime = 0;
+        return;
+    }
+    
+    // 即使duration为0或NaN，也获取当前时间进行检测
+    const currentPosition = videoElement.currentTime || 0;
+    const currentTime = Date.now();
+
+    // 如果位置变化超过0.1秒，重置停滞时间
+    if (Math.abs(currentPosition - lastPlaybackPosition) > 0.1) {
+        positionStagnantTime = 0;
+        lastPlaybackPosition = currentPosition;
+        lastPositionCheckTime = currentTime;
+        return;
+    }
+
+    // 位置基本不变，累计停滞时间
+    // 注意：第一次检测时lastPlaybackPosition为0，如果视频也一直为0，也会被认为是停滞
+    if (currentPosition !== undefined) {
+        positionStagnantTime += currentTime - lastPositionCheckTime;
+
+        // 每10秒报告一次状态
+        if (positionStagnantTime > 0 && positionStagnantTime % 10000 < 2000) {
+            addText(`播放停滞 ${Math.round(positionStagnantTime/1000)} 秒`);
+        }
+
+        // 达到30秒阈值刷新
+        if (positionStagnantTime >= 30000) {
+            addText("播放停滞超过30秒，即将刷新页面...");
+            clearInterval(playbackMonitorTimer);
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+            return;
+        }
+    }
+
+    // 更新记录
+    lastPlaybackPosition = currentPosition;
+    lastPositionCheckTime = currentTime;
+}
+
+// 启动播放进度监控
+function startPlaybackMonitor() {
+    // 清理现有的监控器
+    if (playbackMonitorTimer) {
+        clearInterval(playbackMonitorTimer);
+    }
+
+    // 重置监控状态
+    positionStagnantTime = 0;
+    lastPlaybackPosition = videoElement ? videoElement.currentTime : 0;
+    lastPositionCheckTime = Date.now();
+
+    // 启动新的监控器，每2秒检查一次
+    playbackMonitorTimer = setInterval(monitorPlaybackProgress, 2000);
+    addText("已启动播放进度监控（30秒停滞检测）");
+}
+
+// 停止播放进度监控
+function stopPlaybackMonitor() {
+    if (playbackMonitorTimer) {
+        clearInterval(playbackMonitorTimer);
+        playbackMonitorTimer = null;
+    }
+    positionStagnantTime = 0;
+    lastPlaybackPosition = 0;
+    videoMonitoringStarted = false; // 重置监控状态标记
+}
+
 function addVideoTimer() {
     let count = 0
     videoTimer = setInterval(() => {
         videoElement = document.querySelector("video");
         layuiLayerContent = $('.layui-layer-content');
         if (videoElement && layuiLayerContent.length === 0) {
-            setVideoElement();
+            // 不再在这里调用setVideoElement，避免重复监控
             if (videoElement.paused) {
                 count++
                 if (count > 60) {
