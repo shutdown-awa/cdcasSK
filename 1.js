@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         成都文理学院刷课助手|自动刷课|考试自动答题
-// @version      2.1.8
+// @version      2.1.9
 // @description  成都文理学院刷课助手，（虽不止成文理，但仅在成文理做了测试）🚀目前已支持平台：【数字化实习实训平台、公益课程、在线学堂、英华学堂】。😀目前已具有功能包括：视频自动播放、自动识别填充验证码、考试自动答题等功能。如有bug请留言。🐧QQ交流群：878643471
 // @author       iFulling
 // @match        *://*.yuruixxkj.com/*
@@ -246,7 +246,7 @@ const setVideoElement = () => {
     if (videoMonitoringStarted) {
         return; // 已经启动过监控，直接返回
     }
-    
+
     videoElement.muted = true;
     videoElement.playbackRate = 1.0;
     videoElement.volume = 0;
@@ -817,7 +817,7 @@ function monitorPlaybackProgress() {
         positionStagnantTime = 0;
         return;
     }
-    
+
     // 即使duration为0或NaN，也获取当前时间进行检测
     const currentPosition = videoElement.currentTime || 0;
     const currentTime = Date.now();
@@ -890,7 +890,7 @@ function addVideoTimer() {
         videoElement = document.querySelector("video");
         layuiLayerContent = $('.layui-layer-content');
         if (videoElement && layuiLayerContent.length === 0) {
-            // 不再在这里调用setVideoElement，避免重复监控
+            setVideoElement();
             if (videoElement.paused) {
                 count++
                 if (count > 60) {
